@@ -7,6 +7,7 @@ from PySide6.QtCore import (
     Signal,
     QAbstractTableModel,
     QSortFilterProxyModel,
+    QTimer,
 )
 from PySide6.QtWidgets import (
     QWidget,
@@ -293,6 +294,10 @@ class ProcessManagerPage(QWidget):
         root.addWidget(self.table, 1)
 
         self.refresh_processes()
+
+        self.refresh_timer = QTimer(self)
+        self.refresh_timer.timeout.connect(self.refresh_processes)
+        self.refresh_timer.start(5000)
 
     def filter_processes(self, text):
         self.proxy_model.setFilterFixedString(text)
