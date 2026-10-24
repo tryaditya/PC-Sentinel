@@ -6,6 +6,7 @@ import psutil
 from collections import deque
 
 from diagnostics import DiagnosticsPage
+from process_manager import ProcessManagerPage
 from PySide6.QtCore import Qt, QTimer, QPointF
 from PySide6.QtGui import QColor, QPainter, QPen, QFont
 from PySide6.QtWidgets import (
@@ -226,36 +227,72 @@ class PCSentinel(QMainWindow):
         sidebar_layout.setContentsMargins(12, 18, 12, 18)
         sidebar_layout.setSpacing(12)
 
+        
         brand = QLabel("PC SENTINEL")
-        brand.setStyleSheet(
-            "font-size: 17px; font-weight: bold; color: #38bdf8;"
-        )
+        brand.setStyleSheet("""
+            font-size: 17px;
+            font-weight: bold;
+            color: #38bdf8;
+            letter-spacing: 1px;
+        """)
         sidebar_layout.addWidget(brand)
+
+        brand_subtitle = QLabel("SYSTEM MONITOR")
+        brand_subtitle.setStyleSheet("""
+            font-size: 9px;
+            font-weight: bold;
+            color: #64748b;
+            letter-spacing: 2px;
+        """)
+        sidebar_layout.addWidget(brand_subtitle)
+
+        divider = QFrame()
+        divider.setFrameShape(QFrame.Shape.HLine)
+        divider.setFixedHeight(1)
+        divider.setStyleSheet("background-color: #25334a; border: none;")
+        sidebar_layout.addSpacing(8)
+        sidebar_layout.addWidget(divider)
+        sidebar_layout.addSpacing(8)
+
 
         self.overview_button = QPushButton("▦  Overview")
         self.diagnostics_button = QPushButton("⚙  Diagnostics")
+        self.process_button = QPushButton("▤  Processes")
 
         for button in (
             self.overview_button,
             self.diagnostics_button,
+            self.process_button,
         ):
             button.setCursor(Qt.CursorShape.PointingHandCursor)
             button.setMinimumHeight(42)
+            
             button.setStyleSheet("""
                 QPushButton {
-                    background: #141e30;
-                    color: #c4d0e2;
-                    border: 1px solid #25334a;
+                    background-color: transparent;
+                    color: #94a3b8;
+                    border: 1px solid transparent;
                     border-radius: 8px;
                     text-align: left;
-                    padding-left: 12px;
+                    padding: 10px 12px;
                     font-size: 12px;
+                    font-weight: 500;
                 }
+
                 QPushButton:hover {
-                    background: #25334a;
-                    color: #ffffff;
+                    background-color: #19253a;
+                    color: #f1f5f9;
+                    border: 1px solid #25334a;
+                }
+
+                QPushButton[active="true"] {
+                    background-color: #123047;
+                    color: #38bdf8;
+                    border: 1px solid #1e5675;
+                    font-weight: bold;
                 }
             """)
+
             sidebar_layout.addWidget(button)
 
         sidebar_layout.addStretch()
@@ -360,17 +397,29 @@ class PCSentinel(QMainWindow):
 
         self.diagnostics_page = DiagnosticsPage()
         self.pages.addWidget(self.diagnostics_page)
+        self.process_page = ProcessManagerPage()
+        self.pages.addWidget(self.process_page)
 
         # Sidebar navigation
+        
+        # Sidebar navigation with active-page highlighting
         self.overview_button.clicked.connect(
-            lambda: self.pages.setCurrentWidget(overview)
+            lambda: self.switch_page(overview, self.overview_button)
         )
         self.diagnostics_button.clicked.connect(
-            lambda: self.pages.setCurrentWidget(self.diagnostics_page)
+            lambda: self.switch_page(
+                self.diagnostics_page, self.diagnostics_button
+            )
+        )
+        self.process_button.clicked.connect(
+            lambda: self.switch_page(
+                self.process_page, self.process_button
+            )
         )
 
         # Start on Overview
-        self.pages.setCurrentWidget(overview)
+        self.switch_page(overview, self.overview_button)
+
 
 
         self.timer = QTimer(self)
@@ -423,6 +472,56 @@ class PCSentinel(QMainWindow):
             f"{(elapsed % 3600) // 60}m"
         )
 
+
+    
+    def switch_page(self, page, active_button):
+        self.pages.setCurrentWidget(page)
+
+        buttons = (
+            self.overview_button,
+            self.diagnostics_button,
+            self.process_button,
+        )
+
+        for button in buttons:
+            button.setProperty("active", button is active_button)
+
+            button.setStyleSheet(
+                """
+                QPushButton {
+                    background-color: #111c2f;
+                    color: #38bdf8;
+                    border: 1px solid #245477;
+                    border-left: 4px solid #38bdf8;
+                    border-radius: 8px;
+                    text-align: left;
+                    padding: 10px 12px;
+                    font-weight: bold;
+                }
+                """
+                if button is active_button else
+                """
+                QPushButton {
+                    background-color: transparent;
+                    color: #94a3b8;
+                    border: 1px solid transparent;
+                    border-radius: 8px;
+                    text-align: left;
+                    padding: 10px 12px;
+                }
+                QPushButton:hover {
+                    background-color: #19253a;
+                    color: #f1f5f9;
+                    border: 1px solid #25334a;
+                }
+                """
+            )
+
+
+            # Refresh the stylesheet so Qt applies the new state.
+            button.style().unpolish(button)
+            button.style().polish(button)
+            button.update()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
