@@ -6,6 +6,7 @@ import psutil
 from collections import deque
 
 from diagnostics import DiagnosticsPage
+from hardware_info import get_cpu_name, get_ram_speed, get_gpu_info
 from process_manager import ProcessManagerPage
 from PySide6.QtCore import Qt, QTimer, QPointF
 from PySide6.QtGui import QColor, QPainter, QPen, QFont
@@ -381,10 +382,16 @@ class PCSentinel(QMainWindow):
         self.cpu_info = QLabel()
         self.ram_info = QLabel()
         self.uptime_info = QLabel()
+        self.gpu_info = QLabel()
 
         info_layout.addWidget(info_title)
 
-        for label in (self.cpu_info, self.ram_info, self.uptime_info):
+        for label in (
+        self.cpu_info,
+        self.ram_info,
+        self.uptime_info,
+        self.gpu_info,
+):
             label.setStyleSheet("color: #c4d0e2; font-size: 11px;")
             info_layout.addWidget(label)
 
@@ -421,6 +428,11 @@ class PCSentinel(QMainWindow):
         self.switch_page(overview, self.overview_button)
 
 
+        
+        self.cpu_name = get_cpu_name()
+        self.ram_speed = get_ram_speed()
+        self.gpu_data = get_gpu_info()
+        self.gpu_refresh_counter = 0
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update_stats)
@@ -461,16 +473,59 @@ class PCSentinel(QMainWindow):
         elapsed = max(0, int(time.time() - psutil.boot_time()))
 
         self.cpu_info.setText(
-            f"Logical processors: {psutil.cpu_count(logical=True)}"
+            f"Processor: {self.cpu_name} | "
+            f"{psutil.cpu_count(logical=True)} logical processors"
         )
+
         self.ram_info.setText(
+            f"RAM speed: {self.ram_speed} | "
             f"Available memory: {memory.available / (1024**3):.1f} GB"
         )
+
         self.uptime_info.setText(
             f"System uptime: {elapsed // 86400}d "
             f"{(elapsed % 86400) // 3600}h "
             f"{(elapsed % 3600) // 60}m"
         )
+
+        self.gpu_refresh_counter += 1
+
+        if self.gpu_refresh_counter >= 5:
+            self.gpu_data = get_gpu_info()
+            self.gpu_refresh_counter = 0
+
+        if self.gpu_data:
+            gpu = self.gpu_data
+
+            if (
+                gpu["memory_used"] is not None
+                and gpu["memory_total"] is not None
+            ):
+                vram_text = (
+                    f'{gpu["memory_used"]:.0f} / '
+                    f'{gpu["memory_total"]:.0f} MB VRAM'
+                )
+            else:
+                vram_text = "VRAM unavailable"
+
+            if gpu["utilization"] is not None:
+                usage_text = f'{gpu["utilization"]:.0f}% usage'
+            else:
+                usage_text = "usage unavailable"
+
+            if gpu["temperature"] is not None:
+                temp_text = f'{gpu["temperature"]:.0f}°C'
+            else:
+                temp_text = "temperature unavailable"
+
+            self.gpu_info.setText(
+                f'GPU: {gpu["name"]} | {vram_text} | '
+                f'{usage_text} | {temp_text}'
+            )
+        else:
+            self.gpu_info.setText(
+                "GPU: NVIDIA telemetry unavailable"
+            )
 
 
     
@@ -525,9 +580,70 @@ class PCSentinel(QMainWindow):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    app.setStyle("Fusion")
+    
+app.setStyleSheet("""
+    QScrollBar:vertical {
+        background: #0b1220;
+        width: 10px;
+        margin: 2px;
+        border: none;
+        border-radius: 5px;
+    }
 
-    window = PCSentinel()
-    window.show()
+    QScrollBar::handle:vertical {
+        background: #334155;
+        min-height: 30px;
+        border-radius: 5px;
+    }
 
-    sys.exit(app.exec())
+    QScrollBar::handle:vertical:hover {
+        background: #38bdf8;
+    }
+
+    QScrollBar::add-line:vertical,
+    QScrollBar::sub-line:vertical {
+        height: 0px;
+        border: none;
+    }
+
+    QScrollBar::add-page:vertical,
+    QScrollBar::sub-page:vertical {
+        background: transparent;
+    }
+
+    QScrollBar:horizontal {
+        background: #0b1220;
+        height: 10px;
+        margin: 2px;
+        border: none;
+        border-radius: 5px;
+    }
+
+    QScrollBar::handle:horizontal {
+        background: #334155;
+        min-width: 30px;
+        border-radius: 5px;
+    }
+
+    QScrollBar::handle:horizontal:hover {
+        background: #38bdf8;
+    }
+
+    QScrollBar::add-line:horizontal,
+    QScrollBar::sub-line:horizontal {
+        width: 0px;
+        border: none;
+    }
+
+    QScrollBar::add-page:horizontal,
+    QScrollBar::sub-page:horizontal {
+        background: transparent;
+    }
+    """)
+
+app.setStyle("Fusion")
+
+window = PCSentinel()
+window.show()
+
+sys.exit(app.exec())

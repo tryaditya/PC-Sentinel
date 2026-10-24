@@ -1,7 +1,13 @@
 
 import psutil
 
-from PySide6.QtCore import Qt, QThread, Signal, QAbstractTableModel
+from PySide6.QtCore import (
+    Qt,
+    QThread,
+    Signal,
+    QAbstractTableModel,
+    QSortFilterProxyModel,
+)
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -10,6 +16,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QTableView,
     QHeaderView,
+    QLineEdit,
 )
 
 
@@ -81,7 +88,10 @@ class ProcessTableModel(QAbstractTableModel):
                     Qt.AlignmentFlag.AlignRight
                     | Qt.AlignmentFlag.AlignVCenter
                 )
-            return int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+            return int(
+                Qt.AlignmentFlag.AlignLeft
+                | Qt.AlignmentFlag.AlignVCenter
+            )
 
         if role != Qt.ItemDataRole.DisplayRole:
             return None
@@ -97,7 +107,12 @@ class ProcessTableModel(QAbstractTableModel):
 
         return values[index.column()]
 
-    def headerData(self, section, orientation, role=Qt.ItemDataRole.DisplayRole):
+    def headerData(
+        self,
+        section,
+        orientation,
+        role=Qt.ItemDataRole.DisplayRole,
+    ):
         if role == Qt.ItemDataRole.DisplayRole:
             if orientation == Qt.Orientation.Horizontal:
                 return self.HEADERS[section]
@@ -117,12 +132,20 @@ class ProcessManagerPage(QWidget):
         self.worker = None
         self.model = ProcessTableModel()
 
+        self.proxy_model = QSortFilterProxyModel(self)
+        self.proxy_model.setSourceModel(self.model)
+        self.proxy_model.setFilterKeyColumn(0)
+        self.proxy_model.setFilterCaseSensitivity(
+            Qt.CaseSensitivity.CaseInsensitive
+        )
+
         self.setStyleSheet("""
             QWidget {
                 background-color: #0b1120;
                 color: #e5edf9;
                 font-family: 'Segoe UI';
             }
+
             QPushButton {
                 background-color: #141e30;
                 color: #e5edf9;
@@ -130,11 +153,31 @@ class ProcessManagerPage(QWidget):
                 border-radius: 8px;
                 padding: 8px 14px;
             }
+
             QPushButton:hover {
                 background-color: #25334a;
+                border-color: #38bdf8;
             }
+
             QPushButton:disabled {
                 color: #64748b;
+            }
+
+            QLineEdit {
+                background-color: #141e30;
+                color: #e5edf9;
+                border: 1px solid #25334a;
+                border-radius: 8px;
+                padding: 9px 12px;
+                selection-background-color: #075985;
+            }
+
+            QLineEdit:focus {
+                border: 1px solid #38bdf8;
+            }
+
+            QLineEdit::placeholder {
+                color: #8291aa;
             }
         """)
 
@@ -173,10 +216,34 @@ class ProcessManagerPage(QWidget):
 
         root.addLayout(toolbar)
 
+        search_row = QHBoxLayout()
+
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText(
+            "Search processes by name, e.g. chrome.exe..."
+        )
+        self.search_input.setClearButtonEnabled(True)
+        self.search_input.textChanged.connect(
+            self.filter_processes
+        )
+
+        self.result_count = QLabel("0 matches")
+        self.result_count.setStyleSheet(
+            "color: #8291aa; font-size: 11px;"
+        )
+
+        search_row.addWidget(self.search_input, 1)
+        search_row.addWidget(self.result_count)
+
+        root.addLayout(search_row)
+
         self.table = QTableView()
-        self.table.setModel(self.model)
+        self.table.setModel(self.proxy_model)
         self.table.setSelectionBehavior(
             QTableView.SelectionBehavior.SelectRows
+        )
+        self.table.setSelectionMode(
+            QTableView.SelectionMode.SingleSelection
         )
         self.table.setEditTriggers(
             QTableView.EditTrigger.NoEditTriggers
@@ -202,7 +269,10 @@ class ProcessManagerPage(QWidget):
                 gridline-color: #25334a;
                 border: 1px solid #25334a;
                 border-radius: 8px;
+                selection-background-color: #164e63;
+                selection-color: #f1f5f9;
             }
+
             QHeaderView::section {
                 background: #0f1728;
                 color: #a4b2c8;
@@ -210,14 +280,29 @@ class ProcessManagerPage(QWidget):
                 border: none;
                 font-weight: bold;
             }
+
             QTableView::item {
                 padding: 5px;
+            }
+
+            QTableView::item:hover {
+                background: #203149;
             }
         """)
 
         root.addWidget(self.table, 1)
 
         self.refresh_processes()
+
+    def filter_processes(self, text):
+        self.proxy_model.setFilterFixedString(text)
+
+        visible_count = self.proxy_model.rowCount()
+        total_count = len(self.model.processes)
+
+        self.result_count.setText(
+            f"{visible_count} of {total_count} processes"
+        )
 
     def refresh_processes(self):
         if self.worker is not None and self.worker.isRunning():
@@ -240,6 +325,8 @@ class ProcessManagerPage(QWidget):
             f"{len(processes)} processes found · "
             "Sorted by memory usage"
         )
+
+        self.filter_processes(self.search_input.text())
 
     def show_scan_error(self, message):
         self.status.setText(f"Scan failed: {message}")
