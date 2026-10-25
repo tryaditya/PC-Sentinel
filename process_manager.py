@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QTableView,
     QHeaderView,
     QLineEdit,
+    QMessageBox,
 )
 
 
@@ -30,8 +31,8 @@ class ProcessScanWorker(QThread):
 
         try:
             for process in psutil.process_iter(
-                ["pid", "name", "memory_info"]
-            ):
+                ["pid", "name", "memory_info", "create_time"]
+        ):
                 try:
                     info = process.info
                     memory_info = info["memory_info"]
@@ -46,6 +47,7 @@ class ProcessScanWorker(QThread):
                         "pid": info["pid"],
                         "cpu": process.cpu_percent(interval=None),
                         "memory_mb": memory_mb,
+                        "create_time": info["create_time"],
                     })
 
                 except (
@@ -210,10 +212,22 @@ class ProcessManagerPage(QWidget):
         )
         self.refresh_button.setMinimumHeight(36)
         self.refresh_button.clicked.connect(self.refresh_processes)
+        self.end_task_button = QPushButton("End Task")
+        self.end_task_button.setCursor(
+        Qt.CursorShape.PointingHandCursor
+)
+        self.end_task_button.setMinimumHeight(36)
+        self.end_task_button.setEnabled(False)
+        self.end_task_button.clicked.connect(
+        self.end_selected_process
+)
+        
 
         toolbar.addWidget(self.status)
         toolbar.addStretch()
+        toolbar.addWidget(self.end_task_button)
         toolbar.addWidget(self.refresh_button)
+
 
         root.addLayout(toolbar)
 
@@ -245,6 +259,10 @@ class ProcessManagerPage(QWidget):
         )
         self.table.setSelectionMode(
             QTableView.SelectionMode.SingleSelection
+        )
+
+        self.table.clicked.connect(
+        self.on_process_row_clicked
         )
         self.table.setEditTriggers(
             QTableView.EditTrigger.NoEditTriggers
@@ -339,3 +357,116 @@ class ProcessManagerPage(QWidget):
     def scan_finished(self):
         self.refresh_button.setEnabled(True)
         self.refresh_button.setText("Refresh")
+
+
+
+
+    def on_process_row_clicked(self, index):
+        self.end_task_button.setEnabled(index.isValid())
+
+    def end_selected_process(self):
+        index = self.table.currentIndex()
+
+        if not index.isValid():
+            return
+
+        source_index = self.proxy_model.mapToSource(index)
+        process_data = self.model.processes[source_index.row()]
+
+        pid = process_data["pid"]
+        name = process_data["name"]
+
+        # Avoid terminating important Windows system processes.
+        protected_names = {
+            "system",
+            "registry",
+            "smss.exe",
+            "csrss.exe",
+            "wininit.exe",
+            "winlogon.exe",
+            "services.exe",
+            "lsass.exe",
+            "svchost.exe",
+            "explorer.exe",
+        }
+
+        if name.lower() in protected_names or pid in {0, 4}:
+            QMessageBox.warning(
+                self,
+                "Protected Process",
+                f"{name} (PID {pid}) is protected from termination."
+            )
+            return
+
+        answer = QMessageBox.question(
+            self,
+            "Confirm End Task",
+            f"Are you sure you want to terminate {name} (PID {pid})?",
+            QMessageBox.StandardButton.Yes
+            | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+
+        try:
+            process = psutil.Process(pid)
+
+            # Verify the PID still belongs to the same process.
+            current_name = process.name()
+            current_create_time = process.create_time()
+            original_create_time = process_data["create_time"]
+
+            if (
+                current_name.lower() != name.lower()
+                or original_create_time is None
+                or abs(current_create_time - original_create_time) > 0.01
+            ):
+                QMessageBox.warning(
+                    self,
+                    "Process Changed",
+                    "This process may have changed since the list was loaded. "
+                    "Refresh the list and try again."
+                )
+                self.refresh_processes()
+                return
+
+            process.terminate()
+
+            # Verify the PID still belongs to the same process.
+            if process.name().lower() != name.lower():
+                QMessageBox.warning(
+                    self,
+                    "Process Changed",
+                    "This process has changed since the list was loaded. "
+                    "Refresh the list and try again."
+                )
+                self.refresh_processes()
+                return
+
+            process.terminate()
+
+            QMessageBox.information(
+                self,
+                "End Task",
+                f"Termination requested for {name} (PID {pid})."
+            )
+
+            self.refresh_processes()
+
+        except psutil.NoSuchProcess:
+            QMessageBox.information(
+                self,
+                "Process Already Closed",
+                f"{name} is no longer running."
+            )
+            self.refresh_processes()
+
+        except (psutil.AccessDenied, psutil.Error) as error:
+            QMessageBox.warning(
+                self,
+                "Unable to End Task",
+                f"Windows did not allow this process to be terminated.\n\n"
+                f"{error}"
+            )
