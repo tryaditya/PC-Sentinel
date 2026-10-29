@@ -8,6 +8,7 @@ from collections import deque
 from diagnostics import DiagnosticsPage
 from hardware_info import get_cpu_name, get_ram_speed, get_gpu_info
 from process_manager import ProcessManagerPage
+from network_monitor import NetworkMonitorPage
 from PySide6.QtCore import Qt, QTimer, QPointF
 from PySide6.QtGui import QColor, QPainter, QPen, QFont
 from PySide6.QtWidgets import (
@@ -258,12 +259,14 @@ class PCSentinel(QMainWindow):
 
         self.overview_button = QPushButton("▦  Overview")
         self.diagnostics_button = QPushButton("⚙  Diagnostics")
-        self.process_button = QPushButton("▤  Processes")
+        self.process_button = QPushButton("▤   Processes")
+        self.network_button = QPushButton("🌐  Network")
 
         for button in (
             self.overview_button,
             self.diagnostics_button,
             self.process_button,
+            self.network_button,
         ):
             button.setCursor(Qt.CursorShape.PointingHandCursor)
             button.setMinimumHeight(42)
@@ -406,6 +409,8 @@ class PCSentinel(QMainWindow):
         self.pages.addWidget(self.diagnostics_page)
         self.process_page = ProcessManagerPage()
         self.pages.addWidget(self.process_page)
+        self.network_page = NetworkMonitorPage()
+        self.pages.addWidget(self.network_page)
 
         # Sidebar navigation
         
@@ -421,6 +426,11 @@ class PCSentinel(QMainWindow):
         self.process_button.clicked.connect(
             lambda: self.switch_page(
                 self.process_page, self.process_button
+            )
+        )
+        self.network_button.clicked.connect(
+            lambda: self.switch_page(
+                self.network_page, self.network_button
             )
         )
 
@@ -536,6 +546,7 @@ class PCSentinel(QMainWindow):
             self.overview_button,
             self.diagnostics_button,
             self.process_button,
+            self.network_button,
         )
 
         for button in buttons:
